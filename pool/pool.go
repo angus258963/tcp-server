@@ -3,6 +3,8 @@ package pool
 import (
 	"fmt"
 	"time"
+
+	"github.com/tcp-server/ratelimit"
 )
 
 type Pool struct {
@@ -10,6 +12,7 @@ type Pool struct {
 }
 type Worker struct {
 	Handler     func(chan []byte, Job)
+	Rate        *ratelimit.Ratelimit
 	Pool        *Pool
 	TimeoutSecs int
 }
@@ -23,7 +26,7 @@ type Job struct {
 // queue: number of job queue
 // concurrency: number of workers
 // externalHandler: handler func
-func New(queue, concurrency int, externalHandler func(chan []byte, Job)) *Pool {
+func New(queue, concurrency int, rate *ratelimit.Ratelimit, externalHandler func(chan []byte, Job)) *Pool {
 	jobs := make(chan Job, queue)
 	pool := &Pool{
 		Jobs: jobs,
@@ -33,6 +36,7 @@ func New(queue, concurrency int, externalHandler func(chan []byte, Job)) *Pool {
 	for i := 0; i < concurrency; i++ {
 		worker := &Worker{
 			Handler:     externalHandler,
+			Rate:        rate,
 			Pool:        pool,
 			TimeoutSecs: 10,
 		}
@@ -45,6 +49,14 @@ func New(queue, concurrency int, externalHandler func(chan []byte, Job)) *Pool {
 
 func (w *Worker) Listen() {
 	for job := range w.Pool.Jobs {
+		if !w.Rate.Acquire() {
+			// if reach ratelimit, wait one token time and resend job to queue
+			time.Sleep(time.Millisecond * time.Duration(w.Rate.Limit()/w.Rate.Bucket()))
+			w.Pool.Send(job)
+			fmt.Println("Resend job")
+			continue
+		}
+
 		finished := make(chan []byte)
 		go w.Handler(finished, job)
 
@@ -61,5 +73,5 @@ func (w *Worker) Listen() {
 
 func (pool *Pool) Send(job Job) {
 	pool.Jobs <- job
-	fmt.Println("Number of jobs: ", len(pool.Jobs))
+	fmt.Println("Number of pending jobs: ", len(pool.Jobs))
 }

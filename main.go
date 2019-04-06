@@ -10,6 +10,7 @@ import (
 
 	"github.com/tcp-server/dcard"
 	poolServ "github.com/tcp-server/pool"
+	"github.com/tcp-server/ratelimit"
 )
 
 const (
@@ -21,6 +22,8 @@ const (
 	RequestOffset       = 0
 	NumberOfConcurrency = 10
 	ConnTimeoutSecs     = 60
+	RateLimitBuckets    = 30
+	RateLimitMs         = 1000
 )
 
 func main() {
@@ -51,7 +54,8 @@ func main() {
 	}
 
 	// init pool to handle external requests
-	pool := poolServ.New(100, NumberOfConcurrency, externalHandler)
+	rate := ratelimit.New(RateLimitBuckets, RateLimitMs)
+	pool := poolServ.New(100, NumberOfConcurrency, rate, externalHandler)
 	for {
 		// Listen for an incoming connection.
 		conn, err := l.Accept()
@@ -81,7 +85,7 @@ func handleRequest(conn net.Conn, pool *poolServ.Pool) {
 	for scanner.Scan() {
 		text := scanner.Text()
 		if text == "quit" {
-			conn.Write([]byte("start to end of connect ...\n"))
+			conn.Write([]byte("start to end the connection ...\n"))
 			break
 		}
 

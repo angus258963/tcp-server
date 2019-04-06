@@ -84,6 +84,7 @@ func (d *Request) sendReq(req *http.Request) (Posts, error) {
 		log.Println("json.Unmarshal failed")
 		return nil, err
 	}
+	// time.Sleep(time.Second * 3)
 
 	return posts, nil
 }
