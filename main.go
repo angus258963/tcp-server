@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 
 	"github.com/tcp-server/dcard"
 	poolServ "github.com/tcp-server/pool"
@@ -19,6 +20,7 @@ const (
 	RequestLimit        = 1
 	RequestOffset       = 0
 	NumberOfConcurrency = 10
+	ConnTimeoutSecs     = 60
 )
 
 func main() {
@@ -34,42 +36,22 @@ func main() {
 
 	// new external and handler
 	external := dcard.New(RequestTimeousSecs, RequestLimit, RequestOffset)
-	externalHandler := func(finished chan bool, job poolServ.Job) {
+	externalHandler := func(finished chan []byte, job poolServ.Job) {
 		posts, err := external.Search(job.Query)
 		if err != nil {
-			job.Result <- []byte("Error req.Search:" + err.Error())
-			finished <- false
+			finished <- []byte("Error req.Search:" + err.Error())
 			return
 		}
 		bytes, err := json.Marshal(posts)
 		if err != nil {
-			job.Result <- []byte("Error josn.Marshal" + err.Error())
-			finished <- false
+			finished <- []byte("Error josn.Marshal" + err.Error())
 			return
 		}
-
-		bytes = append(bytes)
-		job.Result <- bytes
-		finished <- true
+		finished <- bytes
 	}
 
-	// init job queue
-	jobs := make(chan poolServ.Job, 100)
-	pool := &poolServ.Pool{
-		Jobs: jobs,
-	}
-	// create concurrency workers
-	for i := 0; i < NumberOfConcurrency; i++ {
-		worker := &poolServ.Worker{
-			Handler:     externalHandler,
-			Pool:        pool,
-			TimeoutSecs: 10,
-		}
-		go func() {
-			worker.Listen()
-		}()
-	}
-
+	// init pool to handle external requests
+	pool := poolServ.New(100, NumberOfConcurrency, externalHandler)
 	for {
 		// Listen for an incoming connection.
 		conn, err := l.Accept()
@@ -77,6 +59,8 @@ func main() {
 			fmt.Println("Error accepting: ", err.Error())
 			os.Exit(1)
 		}
+
+		conn.SetReadDeadline(time.Now().Add(time.Second * ConnTimeoutSecs))
 		// Handle connections in a new goroutine.
 		go handleRequest(conn, pool)
 	}
@@ -87,7 +71,6 @@ func handleRequest(conn net.Conn, pool *poolServ.Pool) {
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(conn)
-	quit := make(chan struct{})
 	result := make(chan []byte)
 	go func() {
 		for {
@@ -98,18 +81,22 @@ func handleRequest(conn net.Conn, pool *poolServ.Pool) {
 	for scanner.Scan() {
 		text := scanner.Text()
 		if text == "quit" {
-			// TODO: Gracefully shut down
-			close(quit)
-			conn.Write([]byte("End of connect"))
-			return
+			conn.Write([]byte("start to end of connect ...\n"))
+			break
 		}
 
 		// send to worker pool
 		pool.Send(poolServ.Job{
 			Query:  text,
-			Quit:   quit,
 			Result: result,
 		})
 		conn.Write([]byte("Message Received\n"))
 	}
+
+	if err := scanner.Err(); err != nil {
+		conn.Write([]byte("Scanner error:" + err.Error() + "\n"))
+	}
+	conn.Write([]byte("Gracefully shut down\n"))
+	time.Sleep(time.Second * 10)
+	conn.Write([]byte("End of connect\n"))
 }
