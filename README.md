@@ -9,3 +9,7 @@ Run the server
 Connect to server
 
 `nc localhost 3333`
+
+Get server status
+
+`curl localhost:80/status`
