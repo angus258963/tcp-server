@@ -2,4 +2,4 @@
 .*.swp
 
 # binary file
-server
+tcp-server
