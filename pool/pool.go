@@ -90,10 +90,9 @@ func (pool *Pool) GetNumberOfRunningJobs() int {
 
 func (w *Worker) handleJob(job Job) {
 	if !w.Rate.Acquire() {
-		// if reach ratelimit, wait one token time and resend job to queue
-		time.Sleep(time.Millisecond * time.Duration(w.Rate.Limit()/w.Rate.Bucket()))
-		w.Pool.Send(job)
-		fmt.Println("Resend job")
+		// if reach ratelimit, just send error to user
+		fmt.Println("ratelimit")
+		job.Result <- []byte("over ratelimit")
 		return
 	}
 
