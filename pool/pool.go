@@ -2,6 +2,7 @@ package pool
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/angus258963/tcp-server/ratelimit"
@@ -9,7 +10,9 @@ import (
 
 type Pool struct {
 	Jobs           chan Job
-	UnfinishedJobs chan struct{}
+	UnfinishedJobs int
+	RunningJobs    int
+	sync.RWMutex
 }
 type Worker struct {
 	Handler     func(chan []byte, Job)
@@ -29,10 +32,8 @@ type Job struct {
 // externalHandler: handler func
 func New(queue, concurrency int, rate *ratelimit.Ratelimit, externalHandler func(chan []byte, Job)) *Pool {
 	jobs := make(chan Job, queue)
-	unfinishedJobs := make(chan struct{}, concurrency+queue)
 	pool := &Pool{
-		Jobs:           jobs,
-		UnfinishedJobs: unfinishedJobs,
+		Jobs: jobs,
 	}
 
 	// create concurrency workers
@@ -52,23 +53,39 @@ func New(queue, concurrency int, rate *ratelimit.Ratelimit, externalHandler func
 
 func (w *Worker) Listen() {
 	for job := range w.Pool.Jobs {
+		w.Pool.Lock()
+		w.Pool.RunningJobs++
+		w.Pool.Unlock()
+
 		w.handleJob(job)
-		<-w.Pool.UnfinishedJobs
+
+		w.Pool.Lock()
+		w.Pool.UnfinishedJobs--
+		w.Pool.RunningJobs--
+		w.Pool.Unlock()
 	}
 }
 
 func (pool *Pool) Send(job Job) {
+	pool.Lock()
+	pool.UnfinishedJobs++
+	fmt.Println("Number of jobs: ", pool.UnfinishedJobs)
+	pool.Unlock()
+
 	pool.Jobs <- job
 	fmt.Println("Number of pending jobs: ", len(pool.Jobs))
-	pool.UnfinishedJobs <- struct{}{}
-	fmt.Println("Number of jobs: ", len(pool.UnfinishedJobs))
+
 }
 
 func (pool *Pool) GetNumberOfJobs() int {
-	return len(pool.UnfinishedJobs)
+	defer pool.RUnlock()
+	pool.RLock()
+	return pool.UnfinishedJobs
 }
 func (pool *Pool) GetNumberOfRunningJobs() int {
-	return len(pool.UnfinishedJobs) - len(pool.Jobs)
+	defer pool.RUnlock()
+	pool.RLock()
+	return pool.RunningJobs
 }
 
 func (w *Worker) handleJob(job Job) {
