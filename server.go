@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/tcp-server/dcard"
-	poolServ "github.com/tcp-server/pool"
-	"github.com/tcp-server/ratelimit"
+	"github.com/angus258963/tcp-server/dcard"
+	poolServ "github.com/angus258963/tcp-server/pool"
+	"github.com/angus258963/tcp-server/ratelimit"
 )
 
 var host = flag.String("host", "localhost", "The host to listen to; default is localhost")

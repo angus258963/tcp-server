@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tcp-server/ratelimit"
+	"github.com/angus258963/tcp-server/ratelimit"
 )
 
 type Pool struct {
